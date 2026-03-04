@@ -37,8 +37,8 @@ kubectl logs -n '"$NAMESPACE"' deployment/'"$RELEASE_NAME"' -c sam --tail=120
 echo
 echo "== Python import check =="
 POD=$(kubectl get pods -n '"$NAMESPACE"' -l app.kubernetes.io/instance='"$RELEASE_NAME"' -o jsonpath="{.items[0].metadata.name}")
-kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import '"$VERIFY_IMPORT_MODULE"' as t; print(\"import_ok\", callable(t.'"$VERIFY_FUNCTION_NAME"'))"
-kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import asyncio; from '"$VERIFY_IMPORT_MODULE"' import '"$VERIFY_FUNCTION_NAME"'; print(asyncio.run('"$VERIFY_FUNCTION_NAME"'(\"'"$VERIFY_FUNCTION_ARG"'\")))"
+kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import importlib; m = importlib.import_module('"$VERIFY_IMPORT_MODULE"'); print('import_ok', callable(getattr(m, '"$VERIFY_FUNCTION_NAME"')))"
+kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import asyncio, importlib; m = importlib.import_module('"$VERIFY_IMPORT_MODULE"'); fn = getattr(m, '"$VERIFY_FUNCTION_NAME"'); print(asyncio.run(fn('"$VERIFY_FUNCTION_ARG"')))"
 ' | tee "$VERIFY_FILE"
 
 log "Verification report written to $VERIFY_FILE"

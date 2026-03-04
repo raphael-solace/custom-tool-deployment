@@ -38,6 +38,27 @@ async def healthcheck_echo(name: str, tool_context=None, tool_config=None) -> di
 
 Define your Python package metadata in `pyproject.toml`.
 
+Minimal example:
+
+```toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-agent"
+version = "0.1.0"
+description = "Custom Python tools for standalone Solace Agent Mesh deployment"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+```
+
 Reference:
 - [custom-echo-agent/pyproject.toml](/Users/raphaelcaillon/Documents/github/custom-tool-deployment/custom-echo-agent/pyproject.toml)
 
@@ -64,6 +85,10 @@ Import your built tar into remote containerd:
 ```bash
 ./scripts/03_import_image_to_k3s.sh
 ```
+
+If your cluster pulls from an image repository instead of local k3s import, use:
+- `--image-distribution-mode registry`
+- image push during build (`--push-image`, default in registry mode)
 
 ### 5) Create standalone agent config
 
@@ -115,12 +140,45 @@ After you implement your tool code and `pyproject.toml`, run one command:
 
 This automatically:
 1. Generates `deploy/<agent-id>-config.yaml`
-2. Generates a minimal Dockerfile if missing (base image + `pip install .`)
-3. Builds custom image from your package directory
-4. Imports image into k3s
-5. Creates DB bridge secret + `deploy/<agent-id>-values.generated.yaml`
-6. Deploys Helm release `<agent-id>`
-7. Verifies rollout, logs, and Python import/call
+2. Scaffolds missing package files (`pyproject.toml`, `README.md`, `src/<module>.py`)
+3. Generates a minimal Dockerfile if missing (base image + `pip install .`)
+4. Builds custom image from your package directory
+5. Imports image into k3s
+6. Creates DB bridge secret + `deploy/<agent-id>-values.generated.yaml`
+7. Deploys Helm release `<agent-id>`
+8. Verifies rollout, logs, and Python import/call
+
+If you want strict mode (no auto-generated files), add `--no-scaffold`.
+
+### Registry mode (two-step: build first, deploy later)
+
+Step A: build/push image only
+
+```bash
+./scripts/00_build_image_from_package.sh \
+  --agent-id my-agent \
+  --package-dir /abs/path/to/my-agent-package \
+  --module my_agent.tools \
+  --function healthcheck_echo \
+  --image-repository ghcr.io/my-org/my-agent \
+  --image-tag v1 \
+  --image-distribution-mode registry
+```
+
+`registry` mode pushes by default. Use `--no-push-image` if you only want a local build.
+
+Step B: deploy using prebuilt image
+
+```bash
+./scripts/07_deploy_from_prebuilt_image.sh \
+  --agent-id my-agent \
+  --package-dir /abs/path/to/my-agent-package \
+  --module my_agent.tools \
+  --function healthcheck_echo \
+  --image-repository ghcr.io/my-org/my-agent \
+  --image-tag v1 \
+  --image-distribution-mode registry
+```
 
 ## Files to know
 

@@ -11,12 +11,18 @@ require_cmd expect
 require_cmd kubectl
 require_cmd helm
 require_cmd jq
-require_cmd docker
+
+SKIP_DOCKER_CHECK="${SKIP_DOCKER_CHECK:-false}"
+if [[ "$SKIP_DOCKER_CHECK" != "true" ]]; then
+  require_cmd docker
+fi
 
 load_local_env
 
 log "Running local preflight checks"
-docker info >/dev/null
+if [[ "$SKIP_DOCKER_CHECK" != "true" ]]; then
+  docker info >/dev/null
+fi
 
 BASELINE_FILE="$ROOT_DIR/deploy/baseline-snapshot.txt"
 log "Capturing baseline cluster snapshot to $BASELINE_FILE"
