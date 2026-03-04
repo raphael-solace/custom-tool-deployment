@@ -5,9 +5,10 @@ This runbook follows the official standalone deployment guide and deploys **one*
 ## Scope
 
 - One standalone `sam-agent` release
-- One custom Python tool package
+- One custom Python tool package (healthcheck, simple RAG, external Postgres query, PDF inspection)
 - One DB bridge secret for standalone compatibility
-- Full verification (rollout + logs + python import)
+- PDF hardening for built-in `extract_content_from_artifact` (`application/pdf` allowlist)
+- Full verification (rollout + logs + python import + callable PDF tool)
 
 ## Prerequisites
 
@@ -74,6 +75,7 @@ Run from repo root:
 - Captures db-init and sam logs
 - Runs in-pod Python import + tool call check
 - Saves verification report to `deploy/verification-custom-echo-agent.txt`
+- Optional: run with `VERIFY_FUNCTION_NAME=inspect_pdf` to verify PDF tool call path
 
 ## Manual Fallback (Guide Mapping)
 
@@ -117,6 +119,24 @@ kubectl logs -n default deployment/custom-echo-agent -c db-init --tail=80
 kubectl logs -n default deployment/custom-echo-agent -c sam --tail=120
 ```
 
+Targeted PDF tool check:
+
+```bash
+NAMESPACE=default RELEASE_NAME=custom-echo-agent \
+VERIFY_IMPORT_MODULE=custom_echo_agent.tools \
+VERIFY_FUNCTION_NAME=inspect_pdf \
+VERIFY_FUNCTION_ARG=/tmp/notfound.pdf \
+./scripts/06_verify_agent.sh
+```
+
+PDF attachments in chat:
+- `inspect_pdf` first checks local `/tmp` and `/app` paths.
+- If not found locally, it resolves uploaded chat artifacts from `tool_context`.
+- If still not found, it performs shared ArtifactService lookup across candidate app/session contexts.
+- If shared lookup still fails, it scans the artifact storage bucket for matching PDF keys.
+- If `file_path` is omitted, it automatically uses the latest attached PDF artifact.
+- Optional explicit routing args: `source_user_id`, `source_app_name`, `source_session_id`, `bucket_prefix`.
+
 ## UI Access From Laptop (Port-Forward)
 
 Use two terminals.
@@ -145,6 +165,9 @@ Open:
 | Pod ImagePullBackOff | `sudo k3s ctr -n k8s.io images ls | rg custom-echo-agent` on node | Re-run scripts 02 and 03 |
 | db-init fails auth/connection | `kubectl logs deployment/custom-echo-agent -n default -c db-init` | Verify bridge secret keys + postgres host/port/user/password |
 | sam container starts but tool import fails | `kubectl exec ... python -c "import custom_echo_agent.tools"` | Rebuild image and re-import (scripts 02 + 03), then redeploy |
+| Agent says PDF not found after upload | check `kubectl logs -n default deployment/custom-echo-agent -c sam --tail=200 | rg inspect_pdf` | Ensure file was attached in the same chat/session, pass exact uploaded filename, or call `inspect_pdf` without `file_path` |
+| PDF attached to orchestrator is not visible to custom agent | inspect tool result fields `candidate_user_ids`, `candidate_apps`, `candidate_sessions`, `scanned_shared_contexts`, `bucket_scanned_keys` | Re-run with `source_user_id` / `source_app_name` / `source_session_id` / `bucket_prefix` overrides and exact filename |
+| Built-in `extract_content_from_artifact` says binary PDF cannot be analyzed | `kubectl exec -n default deploy/custom-echo-agent -c sam -- grep -n "supported_binary_mime_types" /app/config/agent.yaml` | Ensure `extract_content_from_artifact_config.supported_binary_mime_types` includes `application/pdf`, then redeploy |
 | UI loads but Agents page says "Failed to fetch" | `curl -i -X OPTIONS -H "Origin: http://127.0.0.1:8000" -H "Access-Control-Request-Method: GET" http://127.0.0.1:8080/api/v1/platform/agents` | Ensure CORS allows localhost in `agent-mesh-environment` (`CORS_ALLOWED_ORIGIN_REGEX`), restart `agent-mesh-core`, and keep `8000/8080/5050` forwarded |
 | Browser calls `https://sam.your-domain.com/...` from localhost UI | `curl http://127.0.0.1:8000/api/v1/config | jq '{frontend_server_url,frontend_platform_server_url}'` | Patch `agent-mesh-environment` keys (`FRONTEND_SERVER_URL`, `PLATFORM_SERVICE_URL`, `WEBUI_FRONTEND_SERVER_URL`, `WEBUI_FRONTEND_URL`) to localhost URLs, restart `agent-mesh-core`, then hard-refresh browser |
 

@@ -19,13 +19,19 @@ apps:
       namespace: "${NAMESPACE}"
       supports_streaming: true
       agent_name: "custom_echo_agent"
-      display_name: "Custom Echo Agent"
+      display_name: "Custom BBVA Agent Hello World"
 
       instruction: |
         You are a deterministic deployment validation agent.
-        Use healthcheck_echo when asked for a health check or echo response.
+        You work for BBVA in Spain for customers worldwide.
         Use simple_rag for retrieval-style questions about deployment and configuration.
         Use query_external_postgres for read-only SQL checks on the configured external PostgreSQL database.
+        Use publish_event to send JSON events to Solace topics.
+        Use inspect_pdf to read PDF files from allowed roots and attached chat artifacts.
+        For uploaded files, pass the uploaded filename as file_path.
+        If no file_path is given, inspect_pdf should use the latest attached PDF artifact.
+        If artifact is attached to the orchestrator, inspect_pdf should search shared artifact context and shared artifact storage automatically.
+        Prefer inspect_pdf for PDF analysis instead of generic extract_content_from_artifact.
         Keep responses short and precise.
 
       model:
@@ -60,6 +66,27 @@ apps:
           tool_config:
             database_url: "__REDACTED_DATABASE_URL__"
             default_max_rows: 50
+        - tool_type: python
+          component_module: "custom_echo_agent.tools"
+          component_base_path: "."
+          function_name: "publish_event"
+          tool_name: "publish_event"
+          tool_config:
+            max_payload_chars: 200000
+            disable_certificate_validation: true
+        - tool_type: python
+          component_module: "custom_echo_agent.tools"
+          component_base_path: "."
+          function_name: "inspect_pdf"
+          tool_name: "inspect_pdf"
+          tool_config:
+            search_shared_artifacts: true
+            search_bucket_artifacts: true
+            bucket_max_scan_keys: 5000
+            bucket_max_candidates: 30
+            allowed_roots:
+              - "/tmp"
+              - "/app"
 
       session_service:
         type: ${PERSISTENCE_TYPE, sql}
@@ -76,9 +103,13 @@ apps:
       artifact_handling_mode: reference
       enable_embed_resolution: true
       enable_artifact_content_instruction: true
+      extract_content_from_artifact_config:
+        supported_binary_mime_types:
+          - "application/pdf"
+          - "application/x-pdf"
 
       agent_card:
-        description: "Custom echo + simple RAG agent for standalone deployment verification"
+        description: "BBVA agent that helps customers"
         defaultInputModes: ["text"]
         defaultOutputModes: ["text"]
         skills:
@@ -91,6 +122,12 @@ apps:
           - id: "query_external_postgres"
             name: "External Postgres Query"
             description: "Runs read-only SQL SELECT queries against external PostgreSQL"
+          - id: "publish_event"
+            name: "Publish Event"
+            description: "Publishes JSON payloads to Solace topics using runtime broker credentials"
+          - id: "inspect_pdf"
+            name: "Inspect PDF"
+            description: "Extracts PDF text from local paths or chat attachments and returns query-focused excerpts"
 
       agent_card_publishing:
         interval_seconds: 10

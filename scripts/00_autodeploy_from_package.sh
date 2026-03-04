@@ -324,6 +324,10 @@ apps:
       artifact_handling_mode: reference
       enable_embed_resolution: true
       enable_artifact_content_instruction: true
+      extract_content_from_artifact_config:
+        supported_binary_mime_types:
+          - "application/pdf"
+          - "application/x-pdf"
 
       agent_card:
         description: "Standalone custom agent (${AGENT_ID})"

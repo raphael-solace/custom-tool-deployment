@@ -35,8 +35,12 @@ echo
 echo "== sam logs (tail 120) =="
 kubectl logs -n '"$NAMESPACE"' deployment/'"$RELEASE_NAME"' -c sam --tail=120
 echo
-echo "== Python import check =="
+echo "== Built-in PDF extraction hardening =="
 POD=$(kubectl get pods -n '"$NAMESPACE"' -l app.kubernetes.io/instance='"$RELEASE_NAME"' -o jsonpath="{.items[0].metadata.name}")
+kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- sh -lc "grep -q 'extract_content_from_artifact_config' /app/config/agent.yaml && grep -q 'application/pdf' /app/config/agent.yaml"
+echo "pdf_extract_hardening_ok true"
+echo
+echo "== Python import check =="
 kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import importlib; module = importlib.import_module(\"'"$VERIFY_IMPORT_MODULE"'\"); fn = getattr(module, \"'"$VERIFY_FUNCTION_NAME"'\"); print(\"import_ok\", callable(fn))"
 kubectl exec -n '"$NAMESPACE"' "$POD" -c sam -- python -c "import asyncio, importlib; module = importlib.import_module(\"'"$VERIFY_IMPORT_MODULE"'\"); fn = getattr(module, \"'"$VERIFY_FUNCTION_NAME"'\"); print(asyncio.run(fn(\"'"$VERIFY_FUNCTION_ARG"'\")))"
 ' | tee "$VERIFY_FILE"

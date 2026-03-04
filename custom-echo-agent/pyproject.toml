@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-echo-agent"
-version = "0.3.0"
+version = "0.6.0"
 description = "Custom Python tools for standalone Solace Agent Mesh deployment"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "custom-tool-deployment" }]
+dependencies = [
+  "pypdf>=4.0.0",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

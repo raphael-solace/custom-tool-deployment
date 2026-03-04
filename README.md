@@ -1,6 +1,6 @@
 # Custom Tool Deployment (Standalone SAM Agent)
 
-This repository shows how to deploy a **single standalone Solace Agent Mesh agent** with a **custom Python tool** on an existing cluster.
+This repository shows how to deploy a **single standalone Solace Agent Mesh agent** with **custom Python tools** on an existing cluster.
 
 It is designed to be shared safely:
 - secret-bearing/generated files are ignored by `.gitignore`
@@ -21,22 +21,26 @@ Use [`.env.example`](/Users/raphaelcaillon/Documents/github/custom-tool-deployme
 
 ## Step-by-step (manual flow)
 
-### 1) Write custom echo agent + tool
+### 1) Write custom agent + tools
 
-Create your package with a deterministic tool function.
+Create your package with the tool functions you need.
 
 Reference implementation:
 - [custom-echo-agent/src/custom_echo_agent/tools.py](/Users/raphaelcaillon/Documents/github/custom-tool-deployment/custom-echo-agent/src/custom_echo_agent/tools.py)
 
-Expected function contract:
+Example function contracts:
 
 ```python
 async def healthcheck_echo(name: str, tool_context=None, tool_config=None) -> dict
+async def simple_rag(query: str, top_k: int = 2, tool_context=None, tool_config=None) -> dict
+async def query_external_postgres(sql: str, max_rows: int = 50, tool_context=None, tool_config=None) -> dict
+async def publish_event(topic: str, payload: dict, tool_context=None, tool_config=None) -> dict
+async def inspect_pdf(file_path: str | None = None, query: str | None = None, tool_context=None, tool_config=None) -> dict
 ```
 
 ### 2) Package in TOML
 
-Define your Python package metadata in `pyproject.toml`.
+Define your Python package metadata in `pyproject.toml` and add any required dependencies (example: `pypdf` for PDF parsing).
 
 Minimal example:
 
@@ -92,13 +96,24 @@ If your cluster pulls from an image repository instead of local k3s import, use:
 
 ### 5) Create standalone agent config
 
-Create app config YAML wiring your Python tool:
+Create app config YAML wiring your Python tools:
 - `tool_type: python`
 - `component_module: your_module.tools`
 - `function_name: your_function`
+- `tool_config` for runtime settings (for example `allowed_roots` for `inspect_pdf`)
+- `extract_content_from_artifact_config.supported_binary_mime_types` with PDF MIME types so built-in artifact extraction can read attached PDFs
 
 Reference:
 - [deploy/custom-echo-agent-config.yaml](/Users/raphaelcaillon/Documents/github/custom-tool-deployment/deploy/custom-echo-agent-config.yaml)
+
+Minimal hardening block:
+
+```yaml
+extract_content_from_artifact_config:
+  supported_binary_mime_types:
+    - "application/pdf"
+    - "application/x-pdf"
+```
 
 ### 6) Use live broker/LLM/S3 from the cluster
 
@@ -114,6 +129,29 @@ Then deploy and verify:
 ./scripts/05_deploy_agent.sh
 ./scripts/06_verify_agent.sh
 ```
+
+Optional targeted check for PDF tool import/call:
+
+```bash
+NAMESPACE=default RELEASE_NAME=custom-echo-agent \
+VERIFY_IMPORT_MODULE=custom_echo_agent.tools \
+VERIFY_FUNCTION_NAME=inspect_pdf \
+VERIFY_FUNCTION_ARG=/tmp/notfound.pdf \
+./scripts/06_verify_agent.sh
+```
+
+Attachment behavior for `inspect_pdf`:
+- If `file_path` points to `/tmp` or `/app`, it reads from container filesystem.
+- If local path is missing, it tries chat artifacts via `tool_context.list_artifacts()` and `load_artifact()`.
+- If still not found, it falls back to shared ArtifactService lookup using candidate app/session contexts from invocation metadata.
+- If shared lookup still misses, it scans shared artifact storage (S3/SeaweedFS bucket) for matching PDF keys.
+- If `file_path` is omitted, it selects the latest attached PDF artifact.
+- Optional override parameters: `source_user_id`, `source_app_name`, `source_session_id`, `bucket_prefix`.
+
+Broker publish behavior for `publish_event`:
+- Uses runtime broker credentials (`SOLACE_BROKER_*`) by default.
+- Publishes direct events to the provided Solace topic.
+- For private/self-signed broker certs, set `tool_config.disable_certificate_validation: true` (cluster-specific tradeoff).
 
 ## Full scripted pipeline (existing custom echo agent)
 
@@ -147,6 +185,8 @@ This automatically:
 6. Creates DB bridge secret + `deploy/<agent-id>-values.generated.yaml`
 7. Deploys Helm release `<agent-id>`
 8. Verifies rollout, logs, and Python import/call
+
+Generated config includes PDF hardening for built-in `extract_content_from_artifact`.
 
 If you want strict mode (no auto-generated files), add `--no-scaffold`.
 
