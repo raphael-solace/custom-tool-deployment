@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custom-echo-agent"
+version = "0.1.0"
+description = "Custom Python tools for standalone Solace Agent Mesh deployment"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "custom-tool-deployment" }]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

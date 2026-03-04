@@ -1,0 +1,54 @@
+# Template values file for custom standalone agent deployment.
+# Script 04_create_db_bridge_secret.sh generates deploy/custom-echo-agent-values.generated.yaml
+# with live broker/llm/s3 values from the cluster.
+
+deploymentMode: standalone
+id: custom-echo-agent
+
+global:
+  persistence:
+    namespaceId: "__NAMESPACE_ID__"
+
+serviceAccount:
+  name: solace-agent-mesh-sa
+
+image:
+  repository: docker.io/library/custom-echo-agent
+  tag: local-v1
+  pullPolicy: IfNotPresent
+
+solaceBroker:
+  url: "__SOLACE_BROKER_URL__"
+  username: "__SOLACE_BROKER_USERNAME__"
+  password: "__SOLACE_BROKER_PASSWORD__"
+  vpn: "__SOLACE_BROKER_VPN__"
+  useTemporaryQueues: true
+
+llmService:
+  generalModelName: "__LLM_MODEL__"
+  endpoint: "__LLM_ENDPOINT__"
+  apiKey: "__LLM_API_KEY__"
+
+persistence:
+  existingSecrets:
+    database: "custom-echo-agent-db-bridge"
+    s3: ""
+
+  s3:
+    endpointUrl: "__S3_ENDPOINT_URL__"
+    bucketName: "__S3_BUCKET_NAME__"
+    accessKey: "__S3_ACCESS_KEY_ID__"
+    secretKey: "__S3_SECRET_ACCESS_KEY__"
+    region: "__S3_REGION__"
+
+resources:
+  sam:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: 1500m
+      memory: 1536Mi
+
+rollout:
+  strategy: Recreate
