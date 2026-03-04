@@ -25,7 +25,6 @@ apps:
         You are a deterministic deployment validation agent.
         You work for BBVA in Spain for customers worldwide.
         Use simple_rag for retrieval-style questions about deployment and configuration.
-        Use query_external_postgres for read-only SQL checks on the configured external PostgreSQL database.
         Use publish_event to send JSON events to Solace topics.
         Use inspect_pdf to read PDF files from allowed roots and attached chat artifacts.
         For uploaded files, pass the uploaded filename as file_path.
@@ -58,14 +57,6 @@ apps:
               - "Custom tools are loaded from custom_echo_agent.tools and declared in app_config.tools."
               - "The DATABASE_URL bridge secret is required for standalone database initialization."
               - "Verification includes rollout status, db-init logs, sam logs, and in-pod Python import checks."
-        - tool_type: python
-          component_module: "custom_echo_agent.tools"
-          component_base_path: "."
-          function_name: "query_external_postgres"
-          tool_name: "query_external_postgres"
-          tool_config:
-            database_url: "__REDACTED_DATABASE_URL__"
-            default_max_rows: 50
         - tool_type: python
           component_module: "custom_echo_agent.tools"
           component_base_path: "."
@@ -119,9 +110,6 @@ apps:
           - id: "simple_rag"
             name: "Simple RAG"
             description: "Retrieves best matching chunks from a configured local corpus"
-          - id: "query_external_postgres"
-            name: "External Postgres Query"
-            description: "Runs read-only SQL SELECT queries against external PostgreSQL"
           - id: "publish_event"
             name: "Publish Event"
             description: "Publishes JSON payloads to Solace topics using runtime broker credentials"

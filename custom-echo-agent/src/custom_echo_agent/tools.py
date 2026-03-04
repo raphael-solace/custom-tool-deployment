@@ -16,8 +16,6 @@ import uuid
 import boto3
 
 from google.adk.tools import ToolContext
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from pypdf import PdfReader
 
 try:
@@ -57,62 +55,6 @@ def _serialize_value(value: Any) -> Any:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
-
-
-def _ensure_read_only_sql(sql: str) -> str:
-    normalized = sql.strip().rstrip(";")
-    lowered = normalized.lower()
-    if not normalized:
-        raise ValueError("SQL query cannot be empty.")
-    if not (lowered.startswith("select") or lowered.startswith("with")):
-        raise ValueError("Only SELECT/CTE read queries are allowed.")
-
-    forbidden = (
-        " insert ",
-        " update ",
-        " delete ",
-        " drop ",
-        " alter ",
-        " create ",
-        " truncate ",
-        " grant ",
-        " revoke ",
-        " vacuum ",
-        " analyze ",
-        " execute ",
-    )
-    padded = f" {lowered} "
-    for token in forbidden:
-        if token in padded:
-            raise ValueError(f"Forbidden SQL keyword detected: {token.strip().upper()}")
-    return normalized
-
-
-def _run_pg_select(
-    database_url: str,
-    sql: str,
-    max_rows: int,
-) -> Dict[str, Any]:
-    safe_sql = _ensure_read_only_sql(sql)
-    wrapped_sql = f"SELECT * FROM ({safe_sql}) AS _sam_subquery LIMIT %s"
-
-    with psycopg2.connect(database_url, connect_timeout=10) as connection:
-        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(wrapped_sql, (max_rows,))
-            rows = cursor.fetchall()
-            columns = [desc.name for desc in cursor.description] if cursor.description else []
-
-    serialized_rows = [
-        {key: _serialize_value(value) for key, value in row.items()}
-        for row in rows
-    ]
-
-    return {
-        "columns": columns,
-        "rows": serialized_rows,
-        "row_count": len(serialized_rows),
-        "max_rows": max_rows,
-    }
 
 
 def _summarize_pdf_reader(
@@ -731,50 +673,6 @@ async def simple_rag(
         "deterministic": True,
         "has_tool_context": tool_context is not None,
     }
-
-
-async def query_external_postgres(
-    sql: str,
-    max_rows: int = 50,
-    tool_context: Optional[ToolContext] = None,
-    tool_config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Run a read-only SQL query against an external PostgreSQL database."""
-    config = tool_config or {}
-    database_url = str(config.get("database_url", "")).strip()
-    if not database_url:
-        return {
-            "status": "error",
-            "tool": "query_external_postgres",
-            "error": "Missing required tool_config.database_url",
-        }
-
-    configured_max = config.get("default_max_rows", max_rows)
-    try:
-        limit = int(configured_max)
-    except (TypeError, ValueError):
-        limit = max_rows
-    limit = max(1, min(limit, 200))
-
-    try:
-        result = await asyncio.to_thread(_run_pg_select, database_url, sql, limit)
-        return {
-            "status": "ok",
-            "tool": "query_external_postgres",
-            "query": sql,
-            "result": result,
-            "deterministic": True,
-            "has_tool_context": tool_context is not None,
-        }
-    except Exception as exc:
-        return {
-            "status": "error",
-            "tool": "query_external_postgres",
-            "query": sql,
-            "error": str(exc),
-            "deterministic": True,
-            "has_tool_context": tool_context is not None,
-        }
 
 
 def _coerce_publish_payload_text(payload: Any) -> str:

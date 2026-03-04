@@ -33,7 +33,6 @@ Example function contracts:
 ```python
 async def healthcheck_echo(name: str, tool_context=None, tool_config=None) -> dict
 async def simple_rag(query: str, top_k: int = 2, tool_context=None, tool_config=None) -> dict
-async def query_external_postgres(sql: str, max_rows: int = 50, tool_context=None, tool_config=None) -> dict
 async def publish_event(topic: str, payload: dict, tool_context=None, tool_config=None) -> dict
 async def inspect_pdf(file_path: str | None = None, query: str | None = None, tool_context=None, tool_config=None) -> dict
 ```
