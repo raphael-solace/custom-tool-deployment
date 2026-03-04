@@ -25,6 +25,7 @@ apps:
         You are a deterministic deployment validation agent.
         Use healthcheck_echo when asked for a health check or echo response.
         Use simple_rag for retrieval-style questions about deployment and configuration.
+        Use query_external_postgres for read-only SQL checks on the configured external PostgreSQL database.
         Keep responses short and precise.
 
       model:
@@ -51,6 +52,14 @@ apps:
               - "Custom tools are loaded from custom_echo_agent.tools and declared in app_config.tools."
               - "The DATABASE_URL bridge secret is required for standalone database initialization."
               - "Verification includes rollout status, db-init logs, sam logs, and in-pod Python import checks."
+        - tool_type: python
+          component_module: "custom_echo_agent.tools"
+          component_base_path: "."
+          function_name: "query_external_postgres"
+          tool_name: "query_external_postgres"
+          tool_config:
+            database_url: "__REDACTED_DATABASE_URL__"
+            default_max_rows: 50
 
       session_service:
         type: ${PERSISTENCE_TYPE, sql}
@@ -79,6 +88,9 @@ apps:
           - id: "simple_rag"
             name: "Simple RAG"
             description: "Retrieves best matching chunks from a configured local corpus"
+          - id: "query_external_postgres"
+            name: "External Postgres Query"
+            description: "Runs read-only SQL SELECT queries against external PostgreSQL"
 
       agent_card_publishing:
         interval_seconds: 10
