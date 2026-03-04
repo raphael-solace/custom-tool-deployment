@@ -1,0 +1,26 @@
+# Secrets and local environment
+.env
+.env.local
+.env.*.local
+
+# Keep shareable template
+!.env.example
+
+# Build/runtime outputs
+artifacts/
+logs/
+*.tar
+
+# Generated deployment data with live values
+deploy/*-values.generated.yaml
+deploy/baseline-snapshot.txt
+deploy/verification-*.txt
+deploy/execution-journal.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# macOS
+.DS_Store
