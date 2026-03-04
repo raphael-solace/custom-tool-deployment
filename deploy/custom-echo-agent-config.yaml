@@ -24,6 +24,7 @@ apps:
       instruction: |
         You are a deterministic deployment validation agent.
         Use healthcheck_echo when asked for a health check or echo response.
+        Use simple_rag for retrieval-style questions about deployment and configuration.
         Keep responses short and precise.
 
       model:
@@ -39,6 +40,17 @@ apps:
           tool_name: "healthcheck_echo"
           tool_config:
             prefix: "HELLO"
+        - tool_type: python
+          component_module: "custom_echo_agent.tools"
+          component_base_path: "."
+          function_name: "simple_rag"
+          tool_name: "simple_rag"
+          tool_config:
+            documents:
+              - "Standalone mode requires deploymentMode standalone and a dedicated sam-agent Helm release."
+              - "Custom tools are loaded from custom_echo_agent.tools and declared in app_config.tools."
+              - "The DATABASE_URL bridge secret is required for standalone database initialization."
+              - "Verification includes rollout status, db-init logs, sam logs, and in-pod Python import checks."
 
       session_service:
         type: ${PERSISTENCE_TYPE, sql}
@@ -57,13 +69,16 @@ apps:
       enable_artifact_content_instruction: true
 
       agent_card:
-        description: "Deterministic custom echo agent for standalone deployment verification"
+        description: "Custom echo + simple RAG agent for standalone deployment verification"
         defaultInputModes: ["text"]
         defaultOutputModes: ["text"]
         skills:
           - id: "healthcheck_echo"
             name: "Healthcheck Echo"
             description: "Returns deterministic payload for deployment checks"
+          - id: "simple_rag"
+            name: "Simple RAG"
+            description: "Retrieves best matching chunks from a configured local corpus"
 
       agent_card_publishing:
         interval_seconds: 10

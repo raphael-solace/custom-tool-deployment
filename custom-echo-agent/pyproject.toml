@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-echo-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Custom Python tools for standalone Solace Agent Mesh deployment"
 readme = "README.md"
 requires-python = ">=3.11"
