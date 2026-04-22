@@ -1,0 +1,145 @@
+# Plugin Metadata:
+# Name: shipping-agent
+# Version: 0.1.0
+# Description: Shipping Agent integrates with ShipEngine API for real-time shipping rates and logistics
+# Author: Hari Rangarajan <Hari.Rangarajan@Solace.com>
+#
+# --- Start of Agent Configuration Template ---
+# Solace Agent Mesh: Plugin Configuration Template
+#
+# This file serves as a template for creating new agent configurations from this plugin.
+# Use placeholders like __COMPONENT_KEBAB_CASE_NAME__, __COMPONENT_PASCAL_CASE_NAME__,
+# and __COMPONENT_UPPER_SNAKE_CASE_NAME__ where the specific component name should be inserted.
+
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: shipping-agent.log
+
+# To use the `shared_config.yaml` file, uncomment the following line and remove the `shared_config` section below.
+# !include ../shared_config.yaml
+shared_config:
+  - broker_connection: &broker_connection
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+  - models:
+    general: &general_model
+      # This dictionary structure tells ADK to use the LiteLlm wrapper.
+      # 'model' uses the specific model identifier your endpoint expects.
+      model: ${LLM_SERVICE_GENERAL_MODEL_NAME} # Use env var for model name
+      # 'api_base' tells LiteLLM where to send the request.
+      api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+      # 'api_key' provides authentication.
+      api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+  - services:
+    # Default session service configuration
+    session_service: &default_session_service
+      type: "memory"
+      default_behavior: "PERSISTENT"
+
+    # Default artifact service configuration
+    artifact_service: &default_artifact_service
+      type: "filesystem"
+      base_path: "/tmp/samv2"
+      artifact_scope: namespace # Or "namespace", "app", "custom"
+
+apps:
+  - name: shipping-agent-app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    # App Level Config
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ShippingAgent"
+      display_name: "Shipping Agent"
+      model: *general_model
+
+      instruction: |
+        You are the Shipping Agent. You provide real-time shipping rates and delivery estimates via ShipEngine API.
+        
+        Key behaviors:
+        - Accept destination address and package details (weight, dimensions, package code)
+        - Return available carrier options with costs and estimated delivery dates
+        - For packages >50kg, split into multiple 50kg packages automatically
+        - Sender address is the address of the warehouse provided by the sap-joule-agent
+        - Return structured JSON with carrier, service type, cost, and delivery date
+
+      # Lifecycle functions
+      agent_init_function:
+        module: "lifecycle"
+        name: "on_agent_start"
+        base_path: "./src/shipping-agent"
+        config:
+          startup_message: "Shipping Agent ready to provide shipping rates."
+
+      agent_cleanup_function:
+        module: "lifecycle"
+        base_path: "./src/shipping-agent"
+        name: "on_agent_stop"
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "inspect_excel_workbook"
+          tool_description: "Inspect an Excel workbook, list sheets, and preview rows before shipping calculations."
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "update_excel_cells"
+          tool_description: "Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy."
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "append_excel_rows"
+          tool_description: "Append rows to an Excel sheet from JSON input and save an updated workbook copy."
+
+        - tool_type: python
+          component_module: "tools"
+          component_base_path: "./src/shipping-agent"
+          function_name: "get_shipping_rates"
+          tool_description: "Gets shipping rates from ShipEngine based on package and destination details."
+          tool_config:
+            carrier_ids: ["se-351051","se-351050","se-351052","se-360528"]
+            ship_from_company_name: "Acme Retail"
+            ship_from_address_residential_indicator: "no"
+            api_key: "${SHIPENGINE_API_KEY}"
+            ship_from_name: "Acme Retail Warehouse"
+            ship_from_phone: "222-333-4444"
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: "Provides real-time shipping rates, delivery estimates, and logistics options via ShipEngine API for domestic and international shipments."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "get_shipping_rates"
+            name: "Get Shipping Rates"
+            description: "Retrieves carrier-specific shipping costs and estimated delivery dates based on package dimensions, weight, and destination address."
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 30

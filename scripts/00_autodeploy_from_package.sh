@@ -9,24 +9,25 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/00_autodeploy_from_package.sh \
-    --agent-id custom-echo-agent \
+    --agent-id my-agent \
     --package-dir /abs/path/to/agent-package \
-    --module custom_echo_agent.tools \
+    --module my_agent.tools \
     --function healthcheck_echo
 
 Optional:
-  --display-name "Custom Echo Agent"
+  --display-name "My Agent"
   --tool-name healthcheck_echo
-  --image-repository docker.io/library/custom-echo-agent
+  --image-repository docker.io/library/my-agent
   --image-tag local-v1
-  --base-image gcr.io/gcp-maas-prod/solace-agent-mesh-enterprise:1.65.45
+  --image-platform linux/amd64
+  --base-image gcr.io/gcp-maas-prod/solace-agent-mesh-enterprise:1.97.2
   --image-distribution-mode k3s|registry
   --phase all|image|deploy
   --push-image | --no-push-image
   --namespace default
   --no-scaffold
 
-This script generates deploy/<agent-id>-config.yaml and then runs:
+This script generates build/generated/<agent-id>-config.yaml and then runs:
   01_preflight -> 02_build_image -> 03_import_image_to_k3s (k3s mode only)
   -> 04_create_db_bridge_secret -> 05_deploy_agent -> 06_verify_agent
 
@@ -50,7 +51,8 @@ DISPLAY_NAME=""
 TOOL_NAME=""
 IMAGE_REPOSITORY=""
 IMAGE_TAG="local-v1"
-BASE_IMAGE="gcr.io/gcp-maas-prod/solace-agent-mesh-enterprise:1.65.45"
+IMAGE_PLATFORM="linux/amd64"
+BASE_IMAGE="gcr.io/gcp-maas-prod/solace-agent-mesh-enterprise:1.97.2"
 IMAGE_DISTRIBUTION_MODE="k3s"
 PHASE="all"
 PUSH_IMAGE=""
@@ -89,6 +91,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image-tag)
       IMAGE_TAG="$2"
+      shift 2
+      ;;
+    --image-platform)
+      IMAGE_PLATFORM="$2"
       shift 2
       ;;
     --base-image)
@@ -134,6 +140,13 @@ done
 if [[ -z "$AGENT_ID" || -z "$PACKAGE_DIR" || -z "$MODULE" || -z "$FUNCTION_NAME" ]]; then
   log "Missing required arguments"
   usage
+  exit 1
+fi
+
+if [[ "$MODULE" == src.* ]]; then
+  log "Invalid --module: $MODULE"
+  log "Use Python import path, not filesystem path. Remove leading 'src.'."
+  log "Example: --module my_agent.tools (not src.my_agent.tools)"
   exit 1
 fi
 
@@ -258,12 +271,12 @@ fi
 
 RELEASE_NAME="$AGENT_ID"
 DB_SECRET_NAME="${AGENT_ID}-db-bridge"
-CONFIG_FILE="$ROOT_DIR/deploy/${AGENT_ID}-config.yaml"
-VALUES_FILE="$ROOT_DIR/deploy/${AGENT_ID}-values.generated.yaml"
-IMAGE_TAR="$ROOT_DIR/artifacts/${AGENT_ID}-${IMAGE_TAG}.tar"
+CONFIG_FILE="$BUILD_DIR/generated/${AGENT_ID}-config.yaml"
+VALUES_FILE="$BUILD_DIR/generated/${AGENT_ID}-values.generated.yaml"
+IMAGE_TAR="$BUILD_DIR/images/${AGENT_ID}-${IMAGE_TAG}.tar"
 CUSTOM_IMAGE="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
 
-mkdir -p "$ROOT_DIR/deploy" "$ROOT_DIR/artifacts"
+mkdir -p "$BUILD_DIR/generated" "$BUILD_DIR/images"
 
 log "Generating standalone agent config: $CONFIG_FILE"
 cat > "$CONFIG_FILE" <<YAML
@@ -377,6 +390,7 @@ if [[ "$RUN_IMAGE_PHASE" == "true" ]]; then
   BASE_IMAGE="$BASE_IMAGE" \
   CUSTOM_IMAGE="$CUSTOM_IMAGE" \
   IMAGE_TAR="$IMAGE_TAR" \
+  IMAGE_PLATFORM="$IMAGE_PLATFORM" \
   IMAGE_DISTRIBUTION_MODE="$IMAGE_DISTRIBUTION_MODE" \
   PUSH_IMAGE="$PUSH_IMAGE" \
   "$SCRIPT_DIR/02_build_image.sh"

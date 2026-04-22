@@ -1,0 +1,12 @@
+[Unit]
+Description=Run K8S1 SAM demo self-heal every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=k8s1-sam-selfheal.service
+
+[Install]
+WantedBy=timers.target

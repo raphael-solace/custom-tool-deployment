@@ -11,12 +11,14 @@ require_cmd expect
 
 load_local_env
 
+mkdir -p "$BUILD_DIR/generated"
+
 NAMESPACE="${NAMESPACE:-default}"
-RELEASE_NAME="${RELEASE_NAME:-custom-echo-agent}"
-VALUES_FILE="${VALUES_FILE:-$ROOT_DIR/deploy/custom-echo-agent-values.generated.yaml}"
-CONFIG_FILE="${CONFIG_FILE:-$ROOT_DIR/deploy/custom-echo-agent-config.yaml}"
-REMOTE_VALUES="/tmp/custom-echo-agent-values.generated.yaml"
-REMOTE_CONFIG="/tmp/custom-echo-agent-config.yaml"
+RELEASE_NAME="${RELEASE_NAME:-${AGENT_ID:-example-agent}}"
+VALUES_FILE="${VALUES_FILE:-$BUILD_DIR/generated/${RELEASE_NAME}-values.generated.yaml}"
+CONFIG_FILE="${CONFIG_FILE:-$BUILD_DIR/generated/${RELEASE_NAME}-config.yaml}"
+REMOTE_VALUES="/tmp/${RELEASE_NAME}-values.generated.yaml"
+REMOTE_CONFIG="/tmp/${RELEASE_NAME}-config.yaml"
 
 if [[ ! -f "$VALUES_FILE" ]]; then
   log "Missing values file: $VALUES_FILE"

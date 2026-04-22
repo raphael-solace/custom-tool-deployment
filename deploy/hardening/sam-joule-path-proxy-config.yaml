@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sam-joule-path-proxy-config
+  namespace: default
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+      access_log /dev/stdout;
+      error_log /dev/stderr info;
+
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+
+      server {
+        listen 18000;
+        server_name _;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+
+        location = /sam-joule {
+          return 301 /sam-joule/;
+        }
+
+        location ^~ /api/v1/platform/ {
+          proxy_pass http://127.0.0.1:8001;
+        }
+
+        location ^~ /sam-joule/api/v1/platform/ {
+          rewrite ^/sam-joule(/api/v1/platform/.*)$ $1 break;
+          proxy_pass http://127.0.0.1:8001;
+        }
+
+        location ^~ /api/v1/auth/ {
+          proxy_pass http://127.0.0.1:5050;
+        }
+
+        location ^~ /sam-joule/api/v1/auth/ {
+          rewrite ^/sam-joule(/api/v1/auth/.*)$ $1 break;
+          proxy_pass http://127.0.0.1:5050;
+        }
+
+        location = /login {
+          proxy_pass http://127.0.0.1:5050/login;
+        }
+
+        location = /sam-joule/login {
+          proxy_pass http://127.0.0.1:5050/login;
+        }
+
+        location ^~ /sam-joule/ {
+          rewrite ^/sam-joule/?(.*)$ /$1 break;
+          proxy_pass http://127.0.0.1:8000;
+        }
+
+        location / {
+          proxy_pass http://127.0.0.1:8000;
+        }
+      }
+    }

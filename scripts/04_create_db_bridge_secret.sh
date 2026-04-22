@@ -12,11 +12,13 @@ require_cmd expect
 load_local_env
 
 NAMESPACE="${NAMESPACE:-default}"
-AGENT_ID="${AGENT_ID:-custom-echo-agent}"
-DB_SECRET_NAME="${DB_SECRET_NAME:-custom-echo-agent-db-bridge}"
-VALUES_OUT="${VALUES_OUT:-$ROOT_DIR/deploy/custom-echo-agent-values.generated.yaml}"
-IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-docker.io/library/custom-echo-agent}"
+AGENT_ID="${AGENT_ID:-example-agent}"
+DB_SECRET_NAME="${DB_SECRET_NAME:-${AGENT_ID}-db-bridge}"
+VALUES_OUT="${VALUES_OUT:-$BUILD_DIR/generated/${AGENT_ID}-values.generated.yaml}"
+IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-docker.io/library/${AGENT_ID}}"
 IMAGE_TAG="${IMAGE_TAG:-local-v1}"
+SOURCE_RELEASE="${SOURCE_RELEASE:-}"
+ENV_SECRET="${ENV_SECRET:-}"
 
 get_secret_value() {
   local secret_name="$1"
@@ -39,14 +41,49 @@ require_non_empty() {
   fi
 }
 
+secret_exists() {
+  local secret_name="$1"
+  [[ "$(run_remote "kubectl get secret -n $NAMESPACE $secret_name >/dev/null 2>&1 && echo yes || true")" == "yes" ]]
+}
+
 log "Collecting existing SAM runtime values from cluster"
-SOURCE_RELEASE="$(run_remote "helm list -n $NAMESPACE -q | rg '^sam-agent-' | head -n 1")"
-if [[ -z "$SOURCE_RELEASE" ]]; then
-  log "No existing sam-agent-* release found in namespace $NAMESPACE"
+if [[ -n "$ENV_SECRET" ]]; then
+  log "Using explicitly provided env secret: $ENV_SECRET"
+elif [[ -n "$SOURCE_RELEASE" ]]; then
+  ENV_SECRET="${SOURCE_RELEASE}-env-vars"
+  log "Using env secret from SOURCE_RELEASE: $ENV_SECRET"
+else
+  if secret_exists "agent-mesh-environment"; then
+    ENV_SECRET="agent-mesh-environment"
+  else
+    SOURCE_RELEASE="$(run_remote "helm list -n $NAMESPACE -q | rg '^sam-agent-' | head -n 1")"
+    if [[ -n "$SOURCE_RELEASE" ]]; then
+      ENV_SECRET="${SOURCE_RELEASE}-env-vars"
+    else
+      for candidate_release in $(run_remote "helm list -n $NAMESPACE -q"); do
+        candidate_secret="${candidate_release}-env-vars"
+        if secret_exists "$candidate_secret"; then
+          SOURCE_RELEASE="$candidate_release"
+          ENV_SECRET="$candidate_secret"
+          break
+        fi
+      done
+    fi
+  fi
+fi
+
+if [[ -z "$ENV_SECRET" ]]; then
+  if secret_exists "agent-mesh-environment"; then
+    ENV_SECRET="agent-mesh-environment"
+  fi
+fi
+
+if [[ -z "$ENV_SECRET" ]]; then
+  log "Could not find an env secret. Set ENV_SECRET explicitly or ensure a *-env-vars secret exists."
   exit 1
 fi
 
-ENV_SECRET="${SOURCE_RELEASE}-env-vars"
+log "Using environment secret: $ENV_SECRET"
 NAMESPACE_ID="$(get_secret_label agent-mesh-postgresql app.kubernetes.io/namespace-id)"
 
 PGHOST="$(get_secret_value agent-mesh-postgresql PGHOST)"

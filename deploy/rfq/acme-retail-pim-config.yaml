@@ -1,0 +1,187 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: acme-retail-pim.log
+
+apps:
+  - name: acme-retail-pim
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: AcmeRetailPim
+      display_name: Acme Retail PIM Agent
+
+      model:
+        model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      instruction: |
+        You are the Acme Retail PIM Agent.
+        Query the product database to return product specifications, dimensions, weight, and upsell/cross-sell opportunities.
+        Return structured JSON and include key product identifiers in each result.
+
+      agent_init_function:
+        module: sam_sql_database.lifecycle
+        name: initialize_sql_agent
+        config:
+          db_type: ${ACME_RETAIL_PIM_DB_TYPE, postgresql}
+          db_host: ${ACME_RETAIL_PIM_DB_HOST}
+          db_port: ${ACME_RETAIL_PIM_DB_PORT, 5432}
+          db_user: ${ACME_RETAIL_PIM_DB_USER}
+          db_password: ${ACME_RETAIL_PIM_DB_PASSWORD}
+          db_name: ${ACME_RETAIL_PIM_DB_NAME}
+          query_timeout: 30
+          database_purpose: Stores Acme Retail product catalog information.
+          data_description: Contains products, attributes, categories, brands, and relationships.
+          auto_detect_schema: false
+          database_schema_override: |
+            tables:
+              products:
+                primary_key: product_id
+                columns:
+                  - product_id (bigint)
+                  - sku (varchar)
+                  - product_name (varchar)
+                  - short_description (text)
+                  - long_description (text)
+                  - brand_id (integer)
+                  - manufacturer_id (integer)
+                  - status_id (integer)
+                  - primary_category_id (integer)
+                  - base_uom_id (integer)
+                  - weight_gross (double precision)
+                  - weight_net (double precision)
+                  - created_at (timestamp)
+                  - updated_at (timestamp)
+              brands:
+                primary_key: brand_id
+                columns:
+                  - brand_id (integer)
+                  - brand_code (varchar)
+                  - brand_name (varchar)
+              manufacturers:
+                primary_key: manufacturer_id
+                columns:
+                  - manufacturer_id (integer)
+                  - manufacturer_code (varchar)
+                  - manufacturer_name (varchar)
+                  - country_code (varchar)
+              product_status:
+                primary_key: status_id
+                columns:
+                  - status_id (integer)
+                  - status_code (varchar)
+                  - status_name (varchar)
+              product_categories:
+                primary_key: category_id
+                columns:
+                  - category_id (integer)
+                  - category_code (varchar)
+                  - category_name (varchar)
+                  - parent_category_id (integer)
+              product_category_assignments:
+                primary_key: assignment_id
+                columns:
+                  - assignment_id (bigint)
+                  - product_id (bigint)
+                  - category_id (integer)
+              suppliers:
+                primary_key: supplier_id
+                columns:
+                  - supplier_id (integer)
+                  - supplier_code (varchar)
+                  - supplier_name (varchar)
+                  - country_code (varchar)
+                  - is_active (boolean)
+              product_suppliers:
+                primary_key: product_supplier_id
+                columns:
+                  - product_supplier_id (bigint)
+                  - product_id (bigint)
+                  - supplier_id (integer)
+                  - supplier_cost (double precision)
+                  - supplier_currency (varchar)
+                  - purchase_lead_time_days (integer)
+                  - is_primary (boolean)
+              unit_of_measure:
+                primary_key: uom_id
+                columns:
+                  - uom_id (integer)
+                  - uom_code (varchar)
+                  - uom_name (varchar)
+            key_relationships:
+              - products.brand_id -> brands.brand_id
+              - products.manufacturer_id -> manufacturers.manufacturer_id
+              - products.status_id -> product_status.status_id
+              - products.product_id -> product_category_assignments.product_id
+              - product_category_assignments.category_id -> product_categories.category_id
+              - products.product_id -> product_suppliers.product_id
+              - product_suppliers.supplier_id -> suppliers.supplier_id
+          schema_summary_override: |
+            Acme PIM is centered on `products` (one row per SKU). Use `products.sku` as the primary lookup key.
+            Enrich product rows by joining:
+            - `products.brand_id = brands.brand_id`
+            - `products.manufacturer_id = manufacturers.manufacturer_id`
+            - `products.status_id = product_status.status_id`
+            Category mapping is via `product_category_assignments` and `product_categories`.
+            Supplier cost/lead-time is in `product_suppliers` joined to `suppliers`.
+            Unit metadata is in `unit_of_measure` via `base_uom_id`, `dimension_uom_id`, or `weight_uom_id`.
+
+      agent_cleanup_function:
+        module: sam_sql_database.lifecycle
+        name: cleanup_sql_agent_resources
+
+      tools:
+        - tool_type: builtin-group
+          group_name: artifact_management
+        - tool_type: builtin-group
+          group_name: data_analysis
+        - tool_type: python
+          component_module: sam_sql_database.tools
+          function_name: execute_sql_query
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Provides Acme product catalog data and recommendations from PostgreSQL-backed PIM.
+        defaultInputModes: [text]
+        defaultOutputModes: [text, file]
+        skills:
+          - id: product_catalog_query
+            name: Product Catalog Query
+            description: Retrieves product specs, dimensions, weight, and related recommendations.
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 60

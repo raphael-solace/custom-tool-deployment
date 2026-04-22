@@ -1,0 +1,128 @@
+# Plugin Metadata:
+# Name: sam-sql-database
+# Version: 0.1.0
+# Description: A plugin that provides a SQL agent to perform complex queries based on natural language.
+# Author: SolaceLabs <solacelabs@solace.com>
+
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: acme-retail-pim.log
+
+
+# To use the `shared_config.yaml` file, uncomment the following line and remove the `shared_config` section below.
+# !include ../shared_config.yaml
+shared_config:
+  - broker_connection: &broker_connection
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+  - models:
+    general: &general_model
+      # This dictionary structure tells ADK to use the LiteLlm wrapper.
+      # 'model' uses the specific model identifier your endpoint expects.
+      model: ${LLM_SERVICE_GENERAL_MODEL_NAME} # Use env var for model name
+      # 'api_base' tells LiteLLM where to send the request.
+      api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+      # 'api_key' provides authentication.
+      api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+  - services:
+    # Default session service configuration
+    session_service: &default_session_service
+      type: "memory"
+      default_behavior: "PERSISTENT"
+    
+    # Default artifact service configuration
+    artifact_service: &default_artifact_service
+      type: "filesystem"
+      base_path: "/tmp/samv2"
+      artifact_scope: namespace # Or "namespace", "app", "custom"
+
+apps:
+  - name: acme-retail-pim-app
+    app_module: solace_agent_mesh.agent.sac.app 
+    broker:
+      <<: *broker_connection
+    app_config:
+      namespace: "${NAMESPACE}" # Your A2A topic namespace
+      agent_name: "AcmeRetailPim" 
+      display_name: "Acme Retail PIM Agent"
+      supports_streaming: false # SQL agent tools are typically request-response
+
+      model: *general_model 
+      instruction: |
+        You are the Acme Retail PIM Agent. You provide product catalog information by querying the product database.
+        
+        For each product query, retrieve:
+        1. Primary product details (ID, name, description, dimensions, weight)
+        2. Upsell opportunities (newer versions, improved models, successors)
+        3. Cross-sell opportunities (accessories, complementary items, related products)
+        
+        ALWAYS include physical dimensions (L×W×H) and weight for ALL products returned.
+        Use efficient SQL queries with JOINs and aggregations.
+        Return data in structured JSON format with clear categorization.
+
+      # --- Configurable Agent Initialization & Cleanup ---
+      agent_init_function:
+        module: "sam_sql_database.lifecycle"
+        name: "initialize_sql_agent"
+        config: # This is the custom_agent_init_config, validated by SqlAgentInitConfigModel
+          db_type: "${ACME_RETAIL_PIM_DB_TYPE}" # REQUIRED: "postgresql", "mysql", or "sqlite"
+          db_host: "${ACME_RETAIL_PIM_DB_HOST}" # Optional: e.g., "localhost" (required for mysql/postgres)
+          db_port: ${ACME_RETAIL_PIM_DB_PORT} # Optional: e.g., 5432 (required for mysql/postgres)
+          db_user: "${ACME_RETAIL_PIM_DB_USER}" # Optional: (required for mysql/postgres)
+          db_password: "${ACME_RETAIL_PIM_DB_PASSWORD}" # Optional: (required for mysql/postgres)
+          db_name: "${ACME_RETAIL_PIM_DB_NAME}" # REQUIRED: Database name or file path for SQLite
+          query_timeout: 30 # Optional: Default 30 seconds
+          database_purpose: "Stores the Acme Retail enterprise product catalog information.It contains the various products, their relations, associations and properties." # Optional: Helps LLM understand context
+          data_description: "Contains tables for products, attributes, categories, brands, product relations." # Optional
+          auto_detect_schema: true # Optional: Default true. If false, schema_override is required.
+          database_schema_override: "" # Optional: YAML/text string of schema if auto_detect_schema is false.
+          schema_summary_override: "" # Optional: Natural language summary if auto_detect_schema is false.
+          query_examples: # Optional: List of natural language to SQL examples
+            - natural_language: "Show all products in Acme Retail"
+              sql_query: select * from "public.products"
+          response_guidelines: "Data reflects real-time inventory snapshot."
+
+      agent_cleanup_function:
+        module: "sam_sql_database.lifecycle"
+        name: "cleanup_sql_agent_resources"
+
+      tools:
+        - tool_type: builtin-group
+          group_name: "artifact_management"
+        - tool_type: builtin-group
+          group_name: "data_analysis"
+        - tool_type: python
+          component_module: "sam_sql_database.tools"
+          function_name: "execute_sql_query"
+
+      session_service: 
+        type: "sql"
+        database_url: "${ACME_RETAIL_PIM_DATABASE_URL, sqlite:///acme_retail_pim.db}"
+        default_behavior: "PERSISTENT"
+      artifact_service: *default_artifact_service
+
+      # Agent Card, Discovery, and Inter-Agent Communication
+      agent_card:
+        description: "Provides product catalog data including specifications, dimensions, weight, and upsell/cross-sell opportunities for Acme Retail products."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text", "file"]
+        skills:
+          - id: "product_catalog_query"
+            name: "Product Catalog Query"
+            description: "Retrieves product specifications, dimensions, weight, and related product recommendations from the PIM database."
+
+      agent_card_publishing:
+        interval_seconds: 30
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list: []

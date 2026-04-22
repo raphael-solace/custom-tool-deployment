@@ -3,8 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
-LOG_DIR="$ROOT_DIR/logs"
-mkdir -p "$LOG_DIR"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build}"
+LOG_DIR="${LOG_DIR:-$BUILD_DIR/logs}"
+mkdir -p "$LOG_DIR" "$BUILD_DIR"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -32,16 +33,18 @@ load_local_env() {
     exit 1
   fi
 
-  export SSH_TARGET SSH_PASS
+  export SSH_TARGET SSH_PASS BUILD_DIR LOG_DIR
 }
 
 run_remote() {
   local cmd="$1"
+  local bootstrap='if [[ -f "$HOME/.kube/config" ]]; then export KUBECONFIG="$HOME/.kube/config"; fi; '
+  local wrapped_cmd="${bootstrap}${cmd}"
 
   if [[ -n "${SSH_PASS:-}" ]]; then
     local cmd_b64
-    cmd_b64="$(printf '%s' "$cmd" | base64 | tr -d '\n')"
-    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" CMD_B64="$cmd_b64" expect <<'EOF'
+    cmd_b64="$(printf '%s' "$wrapped_cmd" | base64 | tr -d '\n')"
+    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" CMD_B64="$cmd_b64" expect <<'EOEXPECT'
 set timeout -1
 set target $env(SSH_TARGET)
 set pass $env(SSH_PASS)
@@ -60,6 +63,9 @@ expect {
 }
 set clean $output
 regsub -all {Connection to [^\n]* closed\.\n?} $clean "" clean
+regsub -all {bash: warning: setlocale: LC_ALL: cannot change locale \(en_US\.UTF-8\)\n?} $clean "" clean
+regsub -all {bash: warning: setlocale: LC_CTYPE: cannot change locale \([^\)]*\)\n?} $clean "" clean
+regsub -all {bash: warning: setlocale: LANG: cannot change locale \([^\)]*\)\n?} $clean "" clean
 regsub -all {\r} $clean "" clean
 regsub {^\n+} $clean "" clean
 set clean [string trim $clean]
@@ -67,9 +73,9 @@ puts $clean
 catch wait result
 set exit_status [lindex $result 3]
 exit $exit_status
-EOF
+EOEXPECT
   else
-    ssh -o StrictHostKeyChecking=accept-new "$SSH_TARGET" "bash -lc $(printf '%q' "$cmd")"
+    ssh -o StrictHostKeyChecking=accept-new "$SSH_TARGET" "bash -lc $(printf '%q' "$wrapped_cmd")"
   fi
 }
 
@@ -88,7 +94,7 @@ copy_to_remote() {
   local dst="$2"
 
   if [[ -n "${SSH_PASS:-}" ]]; then
-    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" SRC="$src" DST="$dst" expect <<'EOF'
+    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" SRC="$src" DST="$dst" expect <<'EOEXPECT'
 set timeout -1
 set target $env(SSH_TARGET)
 set pass $env(SSH_PASS)
@@ -102,7 +108,7 @@ expect {
 catch wait result
 set exit_status [lindex $result 3]
 exit $exit_status
-EOF
+EOEXPECT
   else
     scp -o StrictHostKeyChecking=accept-new "$src" "$SSH_TARGET:$dst"
   fi
@@ -113,7 +119,7 @@ copy_from_remote() {
   local dst="$2"
 
   if [[ -n "${SSH_PASS:-}" ]]; then
-    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" SRC="$src" DST="$dst" expect <<'EOF'
+    SSH_TARGET="$SSH_TARGET" SSH_PASS="$SSH_PASS" SRC="$src" DST="$dst" expect <<'EOEXPECT'
 set timeout -1
 set target $env(SSH_TARGET)
 set pass $env(SSH_PASS)
@@ -127,7 +133,7 @@ expect {
 catch wait result
 set exit_status [lindex $result 3]
 exit $exit_status
-EOF
+EOEXPECT
   else
     scp -o StrictHostKeyChecking=accept-new "$SSH_TARGET:$src" "$dst"
   fi

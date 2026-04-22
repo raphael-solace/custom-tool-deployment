@@ -1,0 +1,144 @@
+# Plugin Metadata:
+# Name: sap-joule-agent
+# Version: 0.1.0
+# Description: SAP Joule Agent for RFQ inventory, pricing, lead times, and warehouse sourcing
+# Author: Hari Rangarajan <Hari.Rangarajan@Solace.com>
+#
+# --- Start of Agent Configuration Template ---
+# Solace Agent Mesh: Plugin Configuration Template
+#
+# This file serves as a template for creating new agent configurations from this plugin.
+# Use placeholders like __COMPONENT_KEBAB_CASE_NAME__, __COMPONENT_PASCAL_CASE_NAME__,
+# and __COMPONENT_UPPER_SNAKE_CASE_NAME__ where the specific component name should be inserted.
+
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: sap-joule-agent.log
+
+# To use the `shared_config.yaml` file, uncomment the following line and remove the `shared_config` section below.
+# !include ../shared_config.yaml
+shared_config:
+  - broker_connection: &broker_connection
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+  - models:
+    general: &general_model
+      # This dictionary structure tells ADK to use the LiteLlm wrapper.
+      # 'model' uses the specific model identifier your endpoint expects.
+      model: ${LLM_SERVICE_GENERAL_MODEL_NAME} # Use env var for model name
+      # 'api_base' tells LiteLLM where to send the request.
+      api_base: ${LLM_SERVICE_ENDPOINT} # Use env var for endpoint URL
+      # 'api_key' provides authentication.
+      api_key: ${LLM_SERVICE_API_KEY} # Use env var for API key
+
+  - services:
+    session_service: &default_session_service
+      type: "memory"
+      default_behavior: "PERSISTENT"
+
+    artifact_service: &default_artifact_service
+      type: "filesystem"
+      base_path: "/tmp/samv2"
+      artifact_scope: namespace
+
+  - sap_joule_config: &sap_joule_config
+      base_url: "https://546272fe-1508-48c9-9866-fc102ea6487b.jupiter.prod-eu12.orbit.baf.on.dwc.tools.sap/api"
+      agent_id: "5869e058-7911-45c8-840d-6c6d656e0aae"
+      request_timeout: 30
+      ssl_verify: false
+
+  - sap_auth_config: &sap_auth_config
+      token_url: "https://a3pm5eox3.accounts400.ondemand.com/oauth2/token"
+      client_id: "${SAP_CLIENT_ID, 99fac395-74be-49ee-b51e-38759255e5a2}"
+      client_secret: "${SAP_CLIENT_SECRET, Ud8ockwXMjvmt0zRc7zN_nq/1UBBorK}"
+      request_timeout: 30
+      ssl_verify: false
+
+apps:
+  - name: sap-joule-agent-app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "SapJouleAgent"
+      display_name: "SAP Joule RFQ Agent"
+      model: *general_model
+
+      instruction: |
+        You are the SAP Joule RFQ Agent.
+        For now, operate in deterministic fallback mode and return SAP-equivalent sourcing outputs for demo scenarios.
+
+        Workflow:
+        1. Call `run_mock_joule_assessment` exactly once with the full request text.
+        2. Treat the tool output as authoritative.
+        3. Return the tool output as literal JSON only unless the caller explicitly asks for prose.
+
+        Always include:
+        - Inventory availability / ATP
+        - Pricing details
+        - Lead times
+        - Costing breakdown
+        - Optimal warehouse sourcing recommendation with full warehouse address
+
+        Do not mention fallback mode, simulation, or upstream instability.
+        Your final answer for peer agents must be a single JSON object only.
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "inspect_excel_workbook"
+          tool_description: "Inspect an Excel workbook, list sheets, and preview rows before SAP processing."
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "update_excel_cells"
+          tool_description: "Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy."
+
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "append_excel_rows"
+          tool_description: "Append rows to an Excel sheet from JSON input and save an updated workbook copy."
+
+        - tool_type: python
+          component_module: "tools"
+          component_base_path: "./src/sap-joule-agent"
+          function_name: "run_mock_joule_assessment"
+          tool_description: "Returns deterministic SAP-equivalent sourcing, ATP, pricing, lead-time, and warehouse data for RFQ and order-recovery scenarios."
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: "Processes RFQ requests via SAP Joule, providing inventory availability, pricing, lead times, ATP (Available-to-Promise), costing, and optimal warehouse sourcing recommendations."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "rfq_processing"
+            name: "RFQ Processing"
+            description: "Complete RFQ workflow: authentication, thread management, inventory queries, conversational follow-up, and warehouse optimization for procurement decisions."
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 60

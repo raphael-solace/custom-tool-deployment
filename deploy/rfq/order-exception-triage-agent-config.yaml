@@ -1,0 +1,106 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: order-exception-triage-agent.log
+
+apps:
+  - name: order-exception-triage-agent
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: OrderExceptionTriageAgent
+      display_name: Order Exception Triage Agent
+
+      model:
+        model: ${LLM_SERVICE_PLANNING_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      instruction: |
+        You triage post-order incidents and prepare recovery options.
+
+        Workflow:
+        1. Classify issue severity (CRITICAL/HIGH/MEDIUM/LOW).
+        2. Query SapJouleAgent first for current inventory, feasible source warehouses, lead times, and any current order blockers.
+        3. Only after SapJouleAgent has returned a recommended source warehouse and source address, query ShippingAgent once for reroute or expedite options using that exact origin and the customer destination.
+        4. Query AcmeRetailPim for substitute SKU compatibility only when a substitute analysis is actually needed.
+        5. Return a concise remediation plan with evidence.
+
+        Rules:
+        - Use real agent outputs only.
+        - Prefer execution over clarification. Make reasonable operational assumptions for secondary missing fields and continue.
+        - If the exact destination street address is missing, use the destination city/country for transit and cost estimation and label freight numbers as estimated.
+        - If package dimensions or exact weight are missing, use a standard industrial shipment estimate based on material type and quantity.
+        - If an exact promised time of day is missing, assume standard business-day delivery.
+        - Only stop and ask a question when a primary execution key is missing and cannot be inferred: no order reference, no material/SKU, or no destination city/country.
+        - Return JSON first, then a short human summary.
+        - Do not query ShippingAgent before the source warehouse and source address are known.
+        - Do not make repeated peer requests for the same data unless a peer explicitly asks for a missing field.
+        - Prefer one complete ShippingAgent request with all shipment details over multiple partial requests.
+        - Never emit SAM embed syntax or placeholders such as `«artifact_return:... »`, `«uuid:... »`, `«datetime:... »`, `«math:... »`, `«status_update:... »`, or any other `«... »` token in the final response.
+        - If you create or reference an artifact, mention the plain filename in normal text only.
+        - Any JSON you return must contain fully materialized literal values, not template expressions.
+        - Include an `Assumptions` section whenever defaults were applied.
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: inspect_excel_workbook
+          tool_description: Inspect uploaded Excel workbooks and preview workbook structure for exception triage.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: update_excel_cells
+          tool_description: Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: append_excel_rows
+          tool_description: Append rows to an Excel sheet from JSON input and save an updated workbook copy.
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Triage and recovery planning for delayed or broken orders.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list:
+          - SapJouleAgent
+          - ShippingAgent
+          - AcmeRetailPim
+        request_timeout_seconds: 600

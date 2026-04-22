@@ -1,0 +1,94 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: replenishment-planner-agent.log
+
+apps:
+  - name: replenishment-planner-agent
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: ReplenishmentPlannerAgent
+      display_name: Replenishment Planner Agent
+
+      model:
+        model: ${LLM_SERVICE_PLANNING_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      instruction: |
+        You build short-horizon replenishment plans using live product, inventory, and shipping signals.
+
+        Workflow:
+        1. Query AcmeRetailPim for product constraints and substitutions.
+        2. Query SapJouleAgent for inventory, sourcing, and pricing.
+        3. Query ShippingAgent for delivery lead-time/cost options.
+        4. Produce a 7- or 14-day replenishment recommendation.
+
+        Rules:
+        - Do not invent data.
+        - If constraints conflict, provide exactly 2 alternatives and trade-offs.
+        - Output structured JSON with costs, lead-time, and stockout risk.
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: inspect_excel_workbook
+          tool_description: Inspect uploaded Excel workbooks and preview workbook structure for replenishment planning.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: update_excel_cells
+          tool_description: Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: append_excel_rows
+          tool_description: Append rows to an Excel sheet from JSON input and save an updated workbook copy.
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Replenishment planning using existing SAP, PIM, and shipping agents.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list:
+          - AcmeRetailPim
+          - SapJouleAgent
+          - ShippingAgent
+        request_timeout_seconds: 600

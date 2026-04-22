@@ -1,0 +1,4 @@
+interface:
+  display_name: "Solace Agent Mesh k8s CI/CD"
+  short_description: "Operate Solace Agent Mesh on Kubernetes"
+  default_prompt: "Use $solace-agent-mesh-k8s-cicd to plan, implement, upgrade, validate, or roll back Solace Agent Mesh changes on Kubernetes."

@@ -2,25 +2,32 @@
 .env
 .env.local
 .env.*.local
+**/.env
 
 # Keep shareable template
 !.env.example
 
-# Build/runtime outputs
-artifacts/
-logs/
+# Generated build/runtime outputs
+build/
 *.tar
+*.log
 
 # Generated deployment data with live values
-deploy/*-values.generated.yaml
-deploy/baseline-snapshot.txt
-deploy/verification-*.txt
-deploy/execution-journal.md
+*-values.generated.yaml
+**/*-values.generated.yaml
+
+# Local runtime state and databases
+.sam/
+**/.sam/
+*.db
+*.sqlite
 
 # Python cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
 
 # macOS
 .DS_Store
+**/.DS_Store

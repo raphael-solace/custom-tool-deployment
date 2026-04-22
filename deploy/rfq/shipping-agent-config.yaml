@@ -1,0 +1,119 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: shipping-agent.log
+
+apps:
+  - name: shipping-agent
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: ShippingAgent
+      display_name: Shipping Agent
+
+      instruction: |
+        You are the Shipping Agent.
+        Provide real carrier rate options and ETA estimates using the shipping API tool.
+        Use the warehouse source address received from upstream sourcing steps and destination from the RFQ request.
+        Return structured JSON with carrier, service, cost, and estimated delivery date.
+
+      model:
+        model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      agent_init_function:
+        module: lifecycle
+        base_path: ./src/shipping-agent
+        name: on_agent_start
+        config:
+          startup_message: Shipping Agent ready to provide shipping rates.
+
+      agent_cleanup_function:
+        module: lifecycle
+        base_path: ./src/shipping-agent
+        name: on_agent_stop
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: inspect_excel_workbook
+          tool_description: Inspect an Excel workbook, list sheets, and preview rows before shipping calculations.
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: update_excel_cells
+          tool_description: Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy.
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: append_excel_rows
+          tool_description: Append rows to an Excel sheet from JSON input and save an updated workbook copy.
+
+        - tool_type: python
+          component_module: tools
+          component_base_path: ./src/shipping-agent
+          function_name: get_shipping_rates
+          tool_description: Gets shipping rates based on package and destination details.
+          tool_config:
+            carrier_ids:
+              - ${SHIPENGINE_CARRIER_ID_1, se-351051}
+              - ${SHIPENGINE_CARRIER_ID_2, se-351050}
+              - ${SHIPENGINE_CARRIER_ID_3, se-351052}
+              - ${SHIPENGINE_CARRIER_ID_4, se-360528}
+            api_key: ${SHIPENGINE_API_KEY}
+            ship_from_name: ${SHIP_FROM_NAME, Acme Retail Warehouse}
+            ship_from_phone: ${SHIP_FROM_PHONE, 222-333-4444}
+            ship_from_company_name: ${SHIP_FROM_COMPANY_NAME, Acme Retail}
+            ship_from_address_residential_indicator: "${SHIP_FROM_RESIDENTIAL_INDICATOR, no}"
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Provides real-time shipping rates, delivery estimates, and carrier options.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: get_shipping_rates
+            name: Get Shipping Rates
+            description: Retrieves shipping rates and ETAs for destination and package details.
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 60

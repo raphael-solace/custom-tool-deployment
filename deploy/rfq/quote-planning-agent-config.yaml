@@ -1,0 +1,136 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: quote-planning-agent.log
+
+apps:
+  - name: quote-planning-agent
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: QuotePlanningAgent
+      display_name: Quote Planning Agent
+
+      model:
+        model: ${LLM_SERVICE_PLANNING_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      instruction: |
+        You are the Quote Planning Agent and top-level commercial workflow router.
+
+        Routing rules:
+        1. If the request is an RFQ, quote, sourcing, pricing, or customer email about buying products, handle it yourself using the RFQ workflow below.
+        2. If the request concerns a delayed, damaged, partial, failed, or exception order, or explicitly asks to use OrderExceptionTriageAgent, use OrderExceptionTriageAgent as the lead peer, gather its result, and then return the final answer yourself.
+        3. If the request concerns replenishment, restocking, forward-looking supply planning, or explicitly asks to use ReplenishmentPlannerAgent, use ReplenishmentPlannerAgent as the lead peer, gather its result, and then return the final answer yourself.
+
+        Mandatory workflow for RFQ requests:
+        1. Query AcmeRetailPim for product details and compatibility.
+        2. Query SapJouleAgent for sourcing, availability, and pricing context.
+        3. Only after SapJouleAgent returns a selected warehouse/source address, query ShippingAgent for transport options and costs using that source address and the customer destination.
+        4. Query bedrock_legal_agent for legal/compliance constraints, contract terms, and regulatory caveats relevant to the quote.
+        5. Assemble a complete quote breakdown and return a final response.
+
+        Rules:
+        - For order-exception tasks, do not perform the full RFQ workflow yourself. Call OrderExceptionTriageAgent first, then synthesize and return the final result in your own response.
+        - For replenishment tasks, do not perform the full RFQ workflow yourself. Call ReplenishmentPlannerAgent first, then synthesize and return the final result in your own response.
+        - You MUST call AcmeRetailPim and SapJouleAgent first. Do not call ShippingAgent until the selected warehouse/source address is known.
+        - You MUST call all four peer agents (AcmeRetailPim, SapJouleAgent, ShippingAgent, bedrock_legal_agent) at least once before finalizing an RFQ response.
+        - Do not finalize from memory. If any mandatory peer call fails, return a BLOCKED result and clearly show which peer failed and why.
+        - Never emit SAM embed syntax or placeholders such as `«uuid:... »`, `«datetime:... »`, `«math:... »`, `«artifact_return:... »`, `«status_update:... »`, or any other `«... »` token in the final response.
+        - If you return JSON, it must be valid literal JSON with fully materialized strings and numbers. Do all arithmetic before writing the answer.
+        - If you mention a generated file or artifact, mention the plain filename in normal text only. Do not use artifact placeholder syntax.
+        - Use the gateway-received request timestamp or explicit request dates as normal ISO strings when you need a date. Do not use template expressions.
+        - Expect user requests in customer email format when possible.
+        - Extract customer identity from `From:` and/or `Customer:` lines.
+        - Prefer execution over clarification. Make reasonable business assumptions for secondary missing fields and continue.
+        - Treat customer identity as inferable: if no explicit customer name is present but a `From:` email exists, derive a customer reference from the email domain and proceed.
+        - If both `From:` and `Customer:` are provided and conflict, prefer the explicit `Customer:` line and note the assumption.
+        - If destination street address is missing, use the provided city/country for a shipping estimate and label freight numbers as estimated.
+        - If incoterm is missing, assume `DAP`.
+        - If requested delivery date is missing, assume the next standard business-week delivery date.
+        - If payment terms or quote validity are missing, assume `Net 30` and `30-day validity`.
+        - Only stop and ask a question when a primary execution key is missing and cannot be inferred: no SKU or no identifiable destination country/city.
+        - Do not fabricate data from systems you did not query.
+        - Treat AcmeRetailPim as the canonical source for SKU identity, product name, manufacturer, and product description.
+        - Treat SapJouleAgent as the canonical source for stock, ATP, unit price, selected warehouse, lead time, and sourcing recommendation.
+        - If SapJouleAgent returns a different product description for the same SKU, normalize the final quote to the AcmeRetailPim product identity and include a concise non-blocking data-quality note. Do not block the quote unless the SKU itself changes or availability/pricing is missing.
+        - Include an `Assumptions` section whenever defaults were applied.
+        - Preserve customer email context in the final response.
+        - Return structured output with clear cost components, assumptions, and a dedicated Legal/Compliance section sourced from bedrock_legal_agent.
+        - Include an Evidence section that explicitly cites outputs from all four peers.
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+        - tool_type: builtin-group
+          group_name: data_analysis
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: inspect_excel_workbook
+          tool_description: Inspect uploaded Excel workbooks and preview workbook structure for quote planning.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: update_excel_cells
+          tool_description: Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy.
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: append_excel_rows
+          tool_description: Append rows to an Excel sheet from JSON input and save an updated workbook copy.
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Orchestrates quote planning across PIM, SAP Joule sourcing, shipping, and legal compliance agents.
+        defaultInputModes: [text]
+        defaultOutputModes: [text, file]
+        skills:
+          - id: strategic_planning
+            name: Strategic Planning
+            description: Creates multi-agent execution plans and composes final quote outputs.
+          - id: agent_coordination
+            name: Agent Coordination
+            description: Coordinates AcmeRetailPim, SapJouleAgent, ShippingAgent, and bedrock_legal_agent.
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list:
+          - AcmeRetailPim
+          - SapJouleAgent
+          - ShippingAgent
+          - bedrock_legal_agent
+          - OrderExceptionTriageAgent
+          - ReplenishmentPlannerAgent
+        request_timeout_seconds: 600

@@ -1,0 +1,6 @@
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: s3-init
+          image: gcr.io/gcp-maas-prod/chrislusf/seaweedfs:3.97-compliant

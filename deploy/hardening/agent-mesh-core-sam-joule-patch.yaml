@@ -1,0 +1,20 @@
+spec:
+  template:
+    spec:
+      containers:
+        - name: sam-joule-path-proxy
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: sam-joule-http
+              containerPort: 18000
+              protocol: TCP
+          volumeMounts:
+            - name: sam-joule-path-proxy-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+      volumes:
+        - name: sam-joule-path-proxy-config
+          configMap:
+            name: sam-joule-path-proxy-config

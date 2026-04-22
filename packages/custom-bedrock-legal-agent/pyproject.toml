@@ -1,0 +1,5 @@
+[project]
+name = "custom-bedrock-legal-agent"
+version = "0.1.0"
+description = "Vendored sam_bedrock_agent module for SAM standalone image"
+requires-python = ">=3.11"

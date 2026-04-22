@@ -1,0 +1,34 @@
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: s3-init
+          image: gcr.io/gcp-maas-prod/chrislusf/seaweedfs:3.97-compliant
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for SeaweedFS master to be ready..."
+              until wget --timeout=3 --tries=1 -qO- "$SEAWEEDFS_MASTER_ENDPOINT_STATUS_URL" >/dev/null; do
+                echo "Master not ready yet..."
+                sleep 5
+              done
+
+              echo -e "SeaweedFS master is ready.\n"
+
+              echo "Waiting for SeaweedFS S3 API to be ready..."
+              until wget --timeout=3 --tries=1 -qO- "$SEAWEEDFS_S3_ENDPOINT_STATUS_URL" >/dev/null; do
+                echo "S3 API not ready yet..."
+                sleep 5
+              done
+
+              echo -e "SeaweedFS S3 API is ready.\n"
+
+              echo "Configuring SeaweedFS S3 credentials and buckets..."
+              echo "s3.bucket.create -name=$S3_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT || exit 1
+              echo "s3.bucket.create -name=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT || exit 1
+              echo "s3.configure -apply -access_key=$S3_ACCESS_KEY -secret_key=$S3_SECRET_KEY -user=$S3_ACCESS_KEY -actions=Read,Write,List -buckets=$S3_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+              echo "s3.configure -apply -access_key=$S3_ACCESS_KEY -secret_key=$S3_SECRET_KEY -user=$S3_ACCESS_KEY -actions=Read,Write,List,Tagging,Admin -buckets=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+              echo "s3.configure -apply -user=anonymous -actions=Read,List -buckets=$CONNECTOR_SPEC_BUCKET_NAME" | weed shell -master=$SEAWEEDFS_MASTER_ENDPOINT > /dev/null || exit 1
+
+              echo "SeaweedFS S3 setup completed successfully!"

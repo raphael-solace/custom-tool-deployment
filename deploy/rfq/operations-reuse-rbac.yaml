@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: replenishment-planner-agent-rolebinding-sam
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: replenishment-planner-agent-sa
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-mesh-role-sam
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: order-exception-triage-agent-rolebinding-sam
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: order-exception-triage-agent-sa
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-mesh-role-sam

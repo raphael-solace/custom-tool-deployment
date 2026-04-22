@@ -1,0 +1,44 @@
+[
+  {
+    "name": "RFP1",
+    "description": "Golden RFQ - single-line email request",
+    "category": "RFQ_GOLDEN",
+    "command": "RFP1",
+    "promptText": "From: julie@abc-coffee.com\\nSubject: RFQ - valve controllers for Paris\\n\\nHello,\\nI would like to order 80 valve controllers (SKU MAT-300080) for next week in Paris, France.\\nCustomer: ABC Coffee SAS\\nIncoterm: DAP\\nRequested delivery date: 2026-04-24\\n\\nExecution rules:\\n- Treat this as a customer email and preserve customer identity from the From line.\\n- Use QuotePlanningAgent as lead.\\n- Use real outputs from AcmeRetailPim, SapJouleAgent, ShippingAgent, and bedrock_legal_agent only.\\n- If any secondary detail is missing, make the standard assumption and continue instead of asking a question.\\n- Standard assumptions if needed: city-level destination estimate for Paris, DAP if incoterm missing, Net 30 payment terms, 30-day quote validity, weekday business delivery, single-shipment unless peers recommend otherwise.\\n- Only stop if no SKU or no identifiable destination city/country can be inferred.\\n- Return four sections: (1) machine JSON quote object, (2) executive summary in max 6 lines, (3) evidence by agent, (4) assumptions used."
+  },
+  {
+    "name": "RFP2",
+    "description": "Golden RFQ - standard stock + delivery commitment (email format)",
+    "category": "RFQ_GOLDEN",
+    "command": "RFP2",
+    "promptText": "From: julie@abc-coffee.com\\nSubject: RFQ - pressure sensors and valve controllers for Paris\\n\\nHello Quote Team,\\nPlease provide a complete quote for:\\n- 120 pressure sensors (SKU MAT-200120)\\n- 80 valve controllers (SKU MAT-300080)\\nCustomer: ABC Coffee SAS\\nDestination: Paris, France\\nIncoterm: DAP\\nRequested delivery date: 2026-04-27\\n\\nRules:\\n- Parse customer from the email context (From + Customer line). If these conflict, ask one clarification question.\\n- Use real outputs from AcmeRetailPim, SapJouleAgent, and ShippingAgent only.\\n- If stock is insufficient, propose exactly two alternatives: split shipment and nearest compatible substitute SKU.\\n- Return two sections: (1) machine JSON quote object, (2) executive summary in max 6 lines."
+  },
+  {
+    "name": "RFP3",
+    "description": "Golden RFQ - margin-protected expedited quote (email format)",
+    "category": "RFQ_GOLDEN",
+    "command": "RFP3",
+    "promptText": "From: procurement@novasteel.nl\\nSubject: Urgent expedited RFQ for Rotterdam\\n\\nHi Team,\\nPlease prepare an expedited RFQ for 60 hydraulic pump kits (SKU MAT-400060).\\nCustomer: NovaSteel BV\\nDelivery destination: Rotterdam, Netherlands\\nIncoterm: DDP\\nRequested delivery date: 2026-04-22\\n\\nRules:\\n- Prioritize on-time delivery while keeping gross margin above 18%.\\n- Pull catalog/specs from AcmeRetailPim, availability/pricing from SapJouleAgent, and transport options from ShippingAgent.\\n- If no option satisfies both date and margin, return status BLOCKED with top 2 trade-off options.\\n- Final answer must include: line items, source plant, shipping mode, cost breakdown, margin check, assumptions, risks."
+  },
+  {
+    "name": "RFP4",
+    "description": "Golden RFQ - multi-line substitution and risk disclosure (email format)",
+    "category": "RFQ_GOLDEN",
+    "command": "RFP4",
+    "promptText": "From: operations@alpine-energy.eu\\nSubject: RFQ - flow meters and gasket sets for Milan\\n\\nGood morning,\\nPlease quote the following request:\\n- 200 flow meters (SKU MAT-500200)\\n- 200 gasket sets (SKU MAT-700200)\\nCustomer: Alpine Energy SA\\nDestination: Milan, Italy\\nIncoterm: FCA\\nRequested delivery date: 2026-04-30\\n\\nRules:\\n- Validate every SKU against AcmeRetailPim before pricing.\\n- If an SKU is discontinued or unavailable, propose one compatible substitute with explicit compatibility rationale.\\n- Use real SAP sourcing/availability and real ShippingAgent cost options; do not invent values.\\n- Final response must include: JSON output, per-line evidence source, and a concise risk register (supply, logistics, pricing)."
+  },
+  {
+    "name": "OPS1",
+    "description": "Reusable scenario - post-order exception handling",
+    "category": "REUSE_SCENARIO",
+    "command": "OPS1",
+    "promptText": "From: ops-emea@acme-retail.com\\nSubject: Delayed order remediation for SO-2026-0042\\n\\nCustomer order SO-2026-0042 is now delayed by 4 days for delivery in Lyon, France.\\nMaterial: MAT-300080\\nQuantity: 80\\nIncoterm: DAP\\nOriginal requested delivery date: 2026-04-14\\n\\nExecution rules:\\n- Use OrderExceptionTriageAgent as lead.\\n- Assess severity, query supporting agents as needed, and return 2 feasible recovery paths with customer impact, operational trade-offs, and recommended next action.\\n- Use real outputs only.\\n- If any secondary detail is missing, make the standard assumption and continue instead of asking a question.\\n- Standard assumptions if needed: city-level destination estimate for Lyon, standard industrial shipment dimensions/weight based on material and quantity, standard business-day delivery window, no special customs constraints for intra-France movement.\\n- Only stop if no order reference, no material/SKU, or no destination city/country can be inferred.\\n- Return four sections: (1) strict JSON remediation object, (2) concise business summary, (3) evidence by agent, (4) assumptions used."
+  },
+  {
+    "name": "OPS2",
+    "description": "Reusable scenario - procurement and replenishment planning",
+    "category": "REUSE_SCENARIO",
+    "command": "OPS2",
+    "promptText": "From: supply-planning@acme-retail.com\\nSubject: 14-day replenishment proposal for France\\n\\nPlease prepare a 14-day replenishment recommendation for the France distribution lane.\\nSKUs:\\n- MAT-200120 quantity 120\\n- MAT-300080 quantity 80\\nDestination: Paris, France\\nNeed-by date: 2026-04-29\\n\\nTask: Use ReplenishmentPlannerAgent as lead. Compare replenishment options using PIM specs, SAP availability/pricing, and shipping constraints. Return cost, lead-time, stockout risk, and a recommended option."
+  }
+]

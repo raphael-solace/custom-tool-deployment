@@ -1,0 +1,111 @@
+# Agentic Quote Planning Configurations
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: agentic-quote-planning-orchestrator.log
+
+# Shared SAM config
+!include ../shared_config.yaml
+
+apps:
+  - name: agentic-quote-planning_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE} 
+      supports_streaming: true
+      agent_name: "QuotePlanningAgent"
+      display_name: "QuotePlanningAgent"
+      model: *planning_model 
+
+      instruction: |
+        You are the orchestrator agent for handing quote requests within an AI agentic system. Your primary responsibilities are to:
+        1. Process any incoming product and quote related requests.
+        2. Analyze the requests to determine whether they can be handled by a single specialized agent or require coordination among multiple agents.
+        3. If a request can be handled by a single specialized agent (based on their declared capabilities/description), delegate the request to that agent.
+        4. If a request requires a coordinated effort from multiple specialized agents, devise a logical execution plan detailing the sequence of agent invocations and any necessary data handoffs, and then manage the execution of this plan.
+        
+        Artifact Management Guidelines:
+        - If an artifact was created during the task (either by yourself or a delegated agent), you must use the `list_artifacts` tool to get the details of the created artifacts.
+        - You must then review the list of artifacts and return the ones that are important for the user by using the `signal_artifact_for_return` tool.
+        - Provide regular progress updates using `status_update` embed directives, especially before initiating any tool call.
+        
+        Product and Quote Specific Instructions:
+        - When handling quote requests, ensure that all relevant product details, pricing information, and customer requirements are accurately captured and communicated to the specialized agents involved.
+        - Ensure that the quote request contains the destination address for shipping calculations. If not present, request this information from the user.
+        - Query the acme-retail-pim agent for any product information needed to fulfill the quote request. 
+        - Collaborate with the sap-joule-agent to obtain accurate stocking, pricing and warehouse information including address details.
+        - Collaborate with the shipping-agent to get shipping options and costs based on the selected warehouse and destination address.
+        - Ensure that the final quote provided to the user includes a comprehensive breakdown of product costs, shipping fees, taxes, and any other relevant charges.
+        - Always confirm the final quote details with the user before concluding the interaction.
+        
+        Quote request handling guidelines:
+        - First query the acme-retail-pim agent for product details.
+        - Next, collaborate with the sap-joule-agent to get pricing and warehouse information.
+        - Then, work with the shipping-agent to determine shipping options and costs.
+        - Finally, compile all gathered information into a comprehensive quote for the user.
+      inject_system_purpose: true
+      inject_response_format: true
+      inject_user_profile: true
+      session_service: 
+        type: "sql"
+        database_url: "${ORCHESTRATOR_DATABASE_URL}"
+        default_behavior: "PERSISTENT"
+      artifact_service: *default_artifact_service
+      artifact_handling_mode: "reference" 
+      enable_embed_resolution: true 
+      enable_artifact_content_instruction: true 
+      data_tools_config: *default_data_tools_config
+      tools: 
+        - group_name: artifact_management
+          tool_type: builtin-group
+        - tool_type: builtin-group
+          group_name: "data_analysis"
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "inspect_excel_workbook"
+          tool_description: "Inspect uploaded Excel workbooks and preview workbook structure for quote planning."
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "update_excel_cells"
+          tool_description: "Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy."
+        - tool_type: python
+          component_module: "excel_tools"
+          component_base_path: "./src"
+          function_name: "append_excel_rows"
+          tool_description: "Append rows to an Excel sheet from JSON input and save an updated workbook copy."
+
+      agent_card:
+        description: "The Agentic Quote Planning component. It manages tasks and coordinates multi-agent workflows specifically for handling incoming requests for quotes."
+        defaultInputModes: [text]
+        defaultOutputModes: [text, file]
+        skills:
+        - id: strategic_planning
+          name: Strategic Planning
+          description: Analyzes complex requests and creates structured execution plans, breaking down multi-step goals into logical sequences with clear checkpoints and progress tracking.
+
+        - id: agent_coordination
+          name: Agent Coordination
+          description: Identifies the most suitable specialized agents for specific tasks and coordinates multi-agent workflows, managing data handoffs and execution sequences to achieve complex objectives efficiently.
+
+        - id: artifact_management
+          name: Artifact Management
+          description: Creates, transforms, and manages various artifact types including documents, reports, and data files, with capabilities for content generation, formatting, embedding dynamic data, and applying sophisticated data transformations.
+
+      agent_card_publishing: 
+        interval_seconds: 10
+      agent_discovery: 
+        enabled: true
+      inter_agent_communication:
+        allow_list:
+          - acme-retail-pim_agent
+          - sap-joule-agent
+          - shipping-agent
+
+        request_timeout_seconds: 600

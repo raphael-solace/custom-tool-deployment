@@ -24,7 +24,7 @@ if [[ "$SKIP_DOCKER_CHECK" != "true" ]]; then
   docker info >/dev/null
 fi
 
-BASELINE_FILE="$ROOT_DIR/deploy/baseline-snapshot.txt"
+BASELINE_FILE="$BUILD_DIR/baseline-snapshot.txt"
 log "Capturing baseline cluster snapshot to $BASELINE_FILE"
 run_remote '
 set -euo pipefail

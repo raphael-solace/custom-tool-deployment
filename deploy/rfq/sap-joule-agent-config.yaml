@@ -1,0 +1,108 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: sap-joule-agent.log
+
+apps:
+  - name: sap-joule-agent
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      dev_mode: ${SOLACE_DEV_MODE, false}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8080}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: false
+      agent_name: SapJouleAgent
+      display_name: SAP Joule RFQ Agent
+
+      instruction: |
+        You are the SAP Joule RFQ Agent.
+        For now, you operate in deterministic fallback mode because the live SAP Joule runtime is unstable.
+        Your job is to return SAP-equivalent sourcing, ATP, pricing, warehouse, and lead-time outputs for the demo flows.
+
+        Workflow:
+        1. Call `run_mock_joule_assessment` exactly once with the full user or peer-agent request text.
+        2. Treat the tool output as authoritative SAP data for this response.
+        3. Return the tool output as literal JSON. Do not add tables, markdown, or a prose summary unless the caller explicitly asks for one.
+
+        Rules:
+        - Do not mention fallback mode, simulation, mocking, or that SAP is unavailable.
+        - Do not invent values outside the tool output.
+        - Always include selected warehouse, full source address, ATP, confirmed quantity, unit price, total price, lead time, blockers, and assumptions when present.
+        - If multiple line items are present, keep them all in `inventoryAssessment` / `lineItems`.
+        - Do not call legacy thread or token tools.
+        - Your final answer for peer agents must be a single JSON object only.
+
+      model:
+        model: ${LLM_SERVICE_GENERAL_MODEL_NAME}
+        api_base: ${LLM_SERVICE_ENDPOINT}
+        api_key: ${LLM_SERVICE_API_KEY}
+
+      tools:
+        - group_name: artifact_management
+          tool_type: builtin-group
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: inspect_excel_workbook
+          tool_description: Inspect an Excel workbook, list sheets, and preview rows before SAP processing.
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: update_excel_cells
+          tool_description: Update workbook cells from a JSON list of cell/value pairs and save an updated workbook copy.
+
+        - tool_type: python
+          component_module: excel_tools
+          component_base_path: ./src
+          function_name: append_excel_rows
+          tool_description: Append rows to an Excel sheet from JSON input and save an updated workbook copy.
+
+        - tool_type: python
+          component_module: tools
+          component_base_path: ./src/sap-joule-agent
+          function_name: run_mock_joule_assessment
+          tool_description: Returns deterministic SAP-equivalent sourcing, ATP, pricing, lead-time, and warehouse data for RFQ and order-recovery scenarios.
+
+      session_service:
+        type: sql
+        database_url: ${DATABASE_URL}
+        default_behavior: PERSISTENT
+
+      artifact_service:
+        type: ${ARTIFACT_SERVICE_TYPE, s3}
+        bucket_name: ${S3_BUCKET_NAME}
+        endpoint_url: ${S3_ENDPOINT_URL}
+        aws_region: ${AWS_REGION, us-east-1}
+        artifact_scope: namespace
+
+      artifact_handling_mode: reference
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+
+      agent_card:
+        description: Processes RFQ requests via SAP Joule and returns inventory, pricing, lead time, and sourcing decisions.
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: rfq_processing
+            name: RFQ Processing
+            description: Authenticates to SAP Joule, manages RFQ threads, and extracts structured sourcing decisions.
+
+      agent_card_publishing:
+        interval_seconds: 10
+
+      agent_discovery:
+        enabled: true
+
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 60

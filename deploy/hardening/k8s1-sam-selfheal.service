@@ -1,0 +1,12 @@
+[Unit]
+Description=K8S1 SAM demo self-heal
+After=network-online.target k3s.service
+Wants=network-online.target
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/k8s1-sam-selfheal.sh
+
+[Install]
+WantedBy=multi-user.target
